@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Пиксельная стена</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=Manrope:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+/* Один экран: холст на весь экран, сверху кнопки, снизу палитра и кнопка «Поставить» */
+:root {
+  --bg: #120f1a;
+  --panel: #1d1828;
+  --panel-2: #272036;
+  --line: #342b47;
+  --text: #f3eeff;
+  --muted: #9f95b8;
+  --gold: #ffcf33;
+  --gold-dark: #b8891a;
+  --cyan: #19f6ff;
+  --danger: #ff5470;
+  --pixel: "Pixelify Sans", "Courier New", monospace;
+  --body: "Manrope", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; -webkit-user-select: none; user-select: none; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--body); font-size: 14px; overflow: hidden; touch-action: none; -webkit-tap-highlight-color: transparent; }
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
+button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+#wall { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+
+/* верхняя панель */
+.top { position: fixed; z-index: 5; left: 0; right: 0; top: 0; display: flex; align-items: center; gap: 6px;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) 8px max(10px, env(safe-area-inset-left, 0px));
+  background: linear-gradient(180deg, rgba(18,15,26,.92), rgba(18,15,26,0)); pointer-events: none; }
+.top > * { pointer-events: auto; }
+.brand { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; padding: 6px 10px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); }
+.brand b { font-family: var(--pixel); font-size: 17px; letter-spacing: .3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live { flex: none; display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 800; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.live i { width: 7px; height: 7px; border-radius: 50%; background: #39ff14; box-shadow: 0 0 8px #39ff14; animation: blink 1.6s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: .35; } }
+.icon-btn { width: 40px; height: 40px; flex: none; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); font-size: 19px; position: relative; display: grid; place-items: center; }
+.icon-btn:active { transform: translateY(1px); }
+.icon-btn.dot::after { content: ""; position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+
+/* подпись выбранной клетки */
+.cell-info { position: fixed; z-index: 5; left: 50%; translate: -50% 0; bottom: calc(var(--dock-h, 190px) + 10px); max-width: calc(100% - 24px);
+  display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border-radius: 12px; background: rgba(29,24,40,.94); border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgba(0,0,0,.45); white-space: nowrap; animation: pop .18s ease-out; }
+@keyframes pop { from { transform: scale(.9); opacity: 0; } }
+.cell-info .xy { font-family: var(--pixel); font-size: 15px; color: var(--gold); }
+.cell-info .who { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.cell-info .who b { color: var(--text); }
+.cell-info button { flex: none; padding: 6px 9px; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--line); font-size: 14px; }
+
+/* нижняя панель */
+.dock { position: fixed; z-index: 5; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; gap: 8px;
+  padding: 10px max(10px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px));
+  background: var(--panel); border-top: 1px solid var(--line); box-shadow: 0 -12px 30px rgba(0,0,0,.35); }
+.dock-in { width: min(520px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+.palette { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; }
+.sw { position: relative; aspect-ratio: 1.45; border-radius: 7px; border: 2px solid rgba(255,255,255,.08); box-shadow: inset 0 -3px 0 rgba(0,0,0,.22); transition: transform .12s; }
+.sw.on { transform: translateY(-3px) scale(1.06); border-color: #fff; box-shadow: 0 0 0 2px var(--bg), 0 0 14px rgba(255,255,255,.35), inset 0 -3px 0 rgba(0,0,0,.22); z-index: 1; }
+.sw.gold::after { content: "✦"; position: absolute; right: 2px; top: -1px; font-size: 9px; color: rgba(255,255,255,.85); text-shadow: 0 0 3px #000; }
+.sw.locked { filter: saturate(.5) brightness(.6); }
+.sw.locked::before { content: "🔒"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 11px; }
+.gold-row { position: relative; }
+.place { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 9px 9px 16px; border-radius: 14px;
+  background: var(--gold); color: #2a1d02; box-shadow: 0 5px 0 var(--gold-dark); margin-bottom: 5px; font-weight: 800; transition: transform .08s, box-shadow .08s; }
+.place:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--gold-dark); }
+.place.empty { background: #4a3f63; color: var(--text); box-shadow: 0 5px 0 #2e2742; }
+.place .lbl { font-family: var(--pixel); font-size: 22px; line-height: 1; }
+.place .sub { display: block; font-family: var(--body); font-size: 11.5px; font-weight: 700; opacity: .75; margin-top: 3px; }
+.place .ch { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 10px; background: rgba(0,0,0,.14); font-family: var(--pixel); font-size: 18px; font-variant-numeric: tabular-nums; }
+.place .ch .bn { font-family: var(--body); font-size: 11px; font-weight: 800; padding: 2px 6px; border-radius: 6px; background: rgba(0,0,0,.18); }
+.place .chosen { width: 26px; height: 26px; border-radius: 6px; border: 2px solid rgba(0,0,0,.35); flex: none; }
+.shake { animation: shake .35s; }
+@keyframes shake { 20% { translate: -6px 0; } 40% { translate: 5px 0; } 60% { translate: -3px 0; } 80% { translate: 2px 0; } }
+
+/* окна */
+.modal-back { position: fixed; inset: 0; z-index: 40; background: rgba(6,4,10,.7); display: flex; align-items: flex-end; justify-content: center; animation: fade .2s; }
+@keyframes fade { from { opacity: 0; } }
+.modal { width: min(520px, 100%); max-height: 88%; overflow-y: auto; background: var(--bg); border: 1px solid var(--line); border-bottom: 0; border-radius: 20px 20px 0 0;
+  padding: 18px max(16px, env(safe-area-inset-right, 0px)) calc(18px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  display: flex; flex-direction: column; gap: 12px; animation: rise .35s cubic-bezier(.2,.9,.3,1.1); touch-action: pan-y; }
+@keyframes rise { from { transform: translateY(40%); } }
+.modal h2 { margin: 0; font-family: var(--pixel); font-size: 26px; text-align: center; }
+.modal p { margin: 0; color: var(--muted); text-align: center; line-height: 1.45; }
+.big { font-size: 54px; text-align: center; line-height: 1; }
+.btn { padding: 13px; border-radius: 13px; font-weight: 800; background: var(--panel); border: 1px solid var(--line); }
+.btn.primary { background: var(--gold); color: #2a1d02; border-color: var(--gold); box-shadow: 0 4px 0 var(--gold-dark); }
+.fine { font-size: 11.5px !important; }
+.pack { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); position: relative; }
+.pack .pi { width: 46px; height: 46px; flex: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 4px; border-radius: 10px; background: var(--panel-2); }
+.pack .pi i { border-radius: 2px; }
+.pack .pt { flex: 1; min-width: 0; }
+.pack .pt b { display: block; font-family: var(--pixel); font-size: 19px; }
+.pack .pt small { color: var(--muted); font-size: 12px; }
+.pack .buy { flex: none; padding: 10px 13px; border-radius: 11px; background: var(--gold); color: #2a1d02; font-weight: 800; white-space: nowrap; box-shadow: 0 3px 0 var(--gold-dark); }
+.pack .buy:disabled { background: var(--panel-2); color: var(--muted); box-shadow: none; }
+.pack .tag { position: absolute; top: -8px; left: 12px; font-size: 10.5px; font-weight: 800; padding: 1px 8px; border-radius: 999px; background: var(--danger); color: #fff; }
+.pack.goldp { border-color: var(--gold); background: linear-gradient(110deg, #3a2c0c, var(--panel) 60%); }
+.lb { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); }
+.lb b { width: 28px; text-align: center; font-family: var(--pixel); font-size: 16px; }
+.lb span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.lb i { font-style: normal; font-family: var(--pixel); font-size: 16px; color: var(--cyan); }
+.lb.me { border-color: var(--gold); background: linear-gradient(90deg, #3a2c0c, var(--panel)); }
+.stat { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stat div { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); }
+.stat b { font-family: var(--pixel); font-size: 28px; color: var(--cyan); }
+.stat small { color: var(--muted); font-weight: 700; font-size: 11.5px; text-align: center; }
+.rules { display: flex; flex-direction: column; gap: 8px; }
+.rules div { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); line-height: 1.4; }
+.rules span { font-size: 20px; }
+.toggle { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); font-weight: 700; }
+.toggle i { width: 42px; height: 24px; border-radius: 12px; background: var(--panel-2); position: relative; transition: background .2s; }
+.toggle i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.toggle[aria-pressed="true"] i { background: #39c46a; }
+.toggle[aria-pressed="true"] i::after { transform: translateX(18px); }
+
+.toast { position: fixed; left: 50%; top: calc(64px + env(safe-area-inset-top, 0px)); translate: -50% 0; z-index: 60; max-width: calc(100% - 32px); width: max-content;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 9px 14px; font-weight: 700; font-size: 13px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,.5); animation: fade .2s; }
+.loading { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; font-family: var(--pixel); font-size: 20px; color: var(--muted); pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<canvas id="wall" aria-label="Общий холст"></canvas>
+<div class="loading" id="loading">Загрузка стены…</div>
+
+<header class="top">
+  <button class="brand" id="helpBtn" aria-label="Как играть"><b>Пиксельная стена</b><span class="live"><i></i><span id="liveVal">0</span>/мин</span></button>
+  <button class="icon-btn" id="topBtn" aria-label="Рейтинг">🏆</button>
+  <button class="icon-btn" id="friendsBtn" aria-label="Друзья">👥</button>
+  <button class="icon-btn" id="shopBtn" aria-label="Магазин">🛒</button>
+</header>
+
+<div class="cell-info" id="cellInfo" hidden>
+  <span class="xy" id="cellXY"></span><span class="who" id="cellWho"></span>
+  <button id="shareBtn" aria-label="Поделиться местом">📤</button>
+</div>
+
+<footer class="dock" id="dock"><div class="dock-in">
+  <div class="palette" id="palette"></div>
+  <div class="palette gold-row" id="goldRow"></div>
+  <button class="place" id="placeBtn">
+    <span><span class="lbl" id="placeLbl">Поставить</span><span class="sub" id="placeSub"></span></span>
+    <span class="ch"><span class="chosen" id="chosen"></span><span id="chVal">10/10</span><span class="bn" id="bonusVal" hidden></span></span>
+  </button>
+</div></footer>
+
+<div class="modal-back" id="modalBack" hidden><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+'use strict';
+/* ---------- Настройки ---------- */
+const API = '';   // адрес сервера на Cloudflare Workers; пусто — демо-режим с имитацией игроков
+const BOT = '';   // имя бота без @ — для приглашений и ссылок на место холста
+const TG = window.Telegram?.WebApp?.initData ? window.Telegram.WebApp : null;
+const DEMO = !API;
+const W = 512, H = 512, MAX_CHARGES = 10, REGEN_MS = 20000, FREE_COLORS = 16;
+// 0–15 доступны всем, 16–23 — золотая палитра; порядок совпадает с сервером
+const PALETTE = [
+  '#ffffff', '#e4e4e4', '#888888', '#222222', '#ffa7d1', '#e50000', '#e59500', '#a06a42',
+  '#e5d900', '#94e044', '#02be01', '#00d3dd', '#0083c7', '#0000ea', '#cf6ee4', '#820080',
+  '#ffcf33', '#d9e1e8', '#ff2bd6', '#39ff14', '#19f6ff', '#6a00ff', '#ff4500', '#0b0d2b',
+];
+const RGB = PALETTE.map(h => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16)));
+// пакеты должны совпадать с PACKS в server/worker.js
+const PACKS = [
+  { id: 'px150', pixels: 150, stars: 25, title: '150 пикселей', desc: 'Хватит на небольшой рисунок' },
+  { id: 'px600', pixels: 600, stars: 75, title: '600 пикселей', desc: 'Скидка 50% к малому пакету', tag: 'выгодно' },
+  { id: 'px2500', pixels: 2500, stars: 250, title: '2500 пикселей', desc: 'Для больших картин и войн за место', tag: 'лучшая цена' },
+];
+const GOLD = { id: 'gold', pixels: 100, stars: 99, title: 'Золотая палитра', desc: '8 редких цветов навсегда и 100 пикселей' };
+
+const $ = id => document.getElementById(id);
+const STORE = 'stena-v1';
+let prefs = { color: 5, sound: true, seen: false };
+try { Object.assign(prefs, JSON.parse(localStorage.getItem(STORE) || '{}')); } catch (e) {}
+const savePrefs = () => { try { localStorage.setItem(STORE, JSON.stringify(prefs)); } catch (e) {} };
+if (prefs.color >= FREE_COLORS) prefs.color = 5;
+
+/* ---------- Telegram ---------- */
+if (TG) {
+  try { TG.ready(); TG.expand(); TG.setHeaderColor('#120f1a'); TG.setBackgroundColor('#120f1a'); TG.disableVerticalSwipes?.(); } catch (e) {}
+  TG.BackButton?.onClick(() => closeModal());
+}
+const haptic = (kind, v) => { try { const h = TG?.HapticFeedback; if (!h) return; kind === 'sel' ? h.selectionChanged() : kind === 'note' ? h.notificationOccurred(v) : h.impactOccurred(v); } catch (e) {} };
+async function api(path, body) {
+  if (!API) return null;
+  try {
+    const r = body === undefined ? await fetch(API + path) : await fetch(API + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initData: TG?.initData || '', ...body }) });
+    const data = await r.json().catch(() => ({}));
+    return { status: r.status, ...data };
+  } catch (e) { return null; }
+}
+
+/* ---------- Звук ---------- */
+let ac;
+function beep(f, dur = .08, vol = .05, type = 'square', delay = 0) {
+  if (!prefs.sound) return;
+  try {
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    const t = ac.currentTime + delay, o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 1.5, t + dur);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur + .02);
+  } catch (e) {}
+}
+
+/* ---------- Холст ---------- */
+const cv = $('wall'), g = cv.getContext('2d');
+const off = document.createElement('canvas'); off.width = W; off.height = H;
+const og = off.getContext('2d'), img = og.createImageData(W, H);
+const px = new Uint8Array(W * H);
+let seq = 0;
+// один пиксель рисуется сразу на скрытом холсте; весь холст копируется только при загрузке
+function setPixel(i, c) {
+  px[i] = c; og.fillStyle = PALETTE[c]; og.fillRect(i % W, (i / W) | 0, 1, 1); miniDirty = true;
+}
+function loadBytes(bytes) {
+  const d = img.data;
+  for (let i = 0, k = 0; i < W * H; i++, k += 4) {
+    const c = bytes[i] < PALETTE.length ? bytes[i] : 0, rgb = RGB[c];
+    px[i] = c; d[k] = rgb[0]; d[k + 1] = rgb[1]; d[k + 2] = rgb[2]; d[k + 3] = 255;
+  }
+  og.putImageData(img, 0, 0); miniDirty = true;
+}
+
+// камера: экранная точка = cam.x + клетка * cam.s
+const cam = { x: 0, y: 0, s: 4 };
+let vw = innerWidth, vh = innerHeight, dpr = 1, minS = 2, fitS = 4;
+const MAX_S = 56;
+let TOP_H = 56, DOCK_H = 188;
+const topH = () => TOP_H, dockH = () => DOCK_H;
+function resize() {
+  dpr = Math.min(2, devicePixelRatio || 1); vw = innerWidth; vh = innerHeight;
+  TOP_H = document.querySelector('.top').getBoundingClientRect().height; DOCK_H = $('dock').getBoundingClientRect().height;
+  cv.width = vw * dpr; cv.height = vh * dpr;
+  document.documentElement.style.setProperty('--dock-h', dockH() + 'px');
+  const avail = vh - dockH() - topH() - 24;
+  fitS = Math.max(.2, Math.min((vw - 16) / W, avail / H)); minS = fitS * .6;
+  clampCam(); dirty = true;
+}
+function fit() {
+  cam.s = fitS; cam.x = (vw - W * cam.s) / 2; cam.y = topH() + 12 + (vh - dockH() - topH() - 24 - H * cam.s) / 2;
+}
+function clampCam() {
+  cam.s = Math.min(MAX_S, Math.max(minS, cam.s));
+  const w = W * cam.s, h = H * cam.s;
+  cam.x = Math.min(vw * .5, Math.max(vw * .5 - w, cam.x));
+  cam.y = Math.min((vh - dockH()) * .55, Math.max(topH() + 30 - h + (vh - dockH() - topH()) * .4, cam.y));
+}
+function zoomAt(sx, sy, s) {
+  const wx = (sx - cam.x) / cam.s, wy = (sy - cam.y) / cam.s;
+  cam.s = Math.min(MAX_S, Math.max(minS, s));
+  cam.x = sx - wx * cam.s; cam.y = sy - wy * cam.s; clampCam(); dirty = true;
+}
+// плавный перелёт камеры к цели
+let flight = null;
+function flyTo(cx, cy, s) {
+  const midY = topH() + (vh - dockH() - topH()) / 2;
+  flight = { t0: performance.now(), from: { ...cam }, to: { s, x: vw / 2 - (cx + .5) * s, y: midY - (cy + .5) * s } };
+  dirty = true;
+}
+
+/* ---------- Отрисовка ---------- */
+let dirty = true, selected = -1, color = prefs.color, lastFrame = 0, miniDirty = true;
+const flashes = [], parts = [];
+const bgTile = document.createElement('canvas'); bgTile.width = bgTile.height = 24;
+{ const t = bgTile.getContext('2d'); t.fillStyle = '#120f1a'; t.fillRect(0, 0, 24, 24); t.fillStyle = '#171323'; t.fillRect(0, 0, 12, 12); t.fillRect(12, 12, 12, 12); }
+const bgPattern = g.createPattern(bgTile, 'repeat');
+// мини-карта: видна при приближении, по ней можно перелететь в любое место
+const MINI = 96, miniCv = document.createElement('canvas'); miniCv.width = miniCv.height = MINI * 2;
+const mg = miniCv.getContext('2d');
+const miniRect = () => cam.s > fitS * 2.5 ? { x: 10, y: topH() + 6, w: MINI, h: MINI } : null;
+function draw(now) {
+  requestAnimationFrame(draw);
+  if (flight) {
+    const k = Math.min(1, (now - flight.t0) / 420), e = 1 - (1 - k) ** 3;
+    for (const p of ['s', 'x', 'y']) cam[p] = flight.from[p] + (flight.to[p] - flight.from[p]) * e;
+    if (k >= 1) { flight = null; clampCam(); }
+    dirty = true;
+  }
+  const busy = flashes.length || parts.length;
+  if (!dirty && !busy && (selected < 0 || now - lastFrame < 33)) return;   // одна лишь рамка — 30 кадров в секунду
+  dirty = false; lastFrame = now;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = bgPattern; g.fillRect(0, 0, vw, vh);
+  const s = cam.s, w = W * s, h = H * s;
+  g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(cam.x + 6, cam.y + 8, w, h);
+  g.imageSmoothingEnabled = s < 1;   // издалека сглаживаем, вблизи — чёткие квадраты
+  g.drawImage(off, cam.x, cam.y, w, h);
+  g.imageSmoothingEnabled = false;
+  // сетка при сильном приближении
+  if (s >= 10) {
+    g.strokeStyle = `rgba(0,0,0,${Math.min(.14, (s - 10) / 60)})`; g.lineWidth = 1; g.beginPath();
+    const x0 = Math.max(0, Math.floor(-cam.x / s)), x1 = Math.min(W, Math.ceil((vw - cam.x) / s));
+    const y0 = Math.max(0, Math.floor(-cam.y / s)), y1 = Math.min(H, Math.ceil((vh - cam.y) / s));
+    for (let x = x0; x <= x1; x++) { const X = Math.round(cam.x + x * s) + .5; g.moveTo(X, cam.y + y0 * s); g.lineTo(X, cam.y + y1 * s); }
+    for (let y = y0; y <= y1; y++) { const Y = Math.round(cam.y + y * s) + .5; g.moveTo(cam.x + x0 * s, Y); g.lineTo(cam.x + x1 * s, Y); }
+    g.stroke();
+  }
+  g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = 1; g.strokeRect(cam.x - .5, cam.y - .5, w + 1, h + 1);
+  // чужие пиксели вспыхивают кольцом, свои — подпрыгивают
+  for (let k = flashes.length - 1; k >= 0; k--) {
+    const f = flashes[k], t = (now - f.t0) / (f.own ? 520 : 900);
+    if (t >= 1) { flashes.splice(k, 1); continue; }
+    const cx = cam.x + (f.x + .5) * s, cy = cam.y + (f.y + .5) * s;
+    if (f.own) {
+      const z = s * (1 + .7 * Math.sin(t * Math.PI) * (1 - t));
+      g.fillStyle = PALETTE[f.c]; g.fillRect(cx - z / 2, cy - z / 2, z, z);
+      g.strokeStyle = `rgba(255,255,255,${1 - t})`; g.lineWidth = 2; g.strokeRect(cx - z / 2 - 2, cy - z / 2 - 2, z + 4, z + 4);
+    } else {
+      const r = Math.max(4, s) * (.6 + t * 2.2);
+      g.strokeStyle = PALETTE[f.c]; g.globalAlpha = (1 - t) * .9; g.lineWidth = Math.max(1.5, s * .18);
+      g.strokeRect(cx - r / 2, cy - r / 2, r, r); g.globalAlpha = 1;
+    }
+  }
+  for (let k = parts.length - 1; k >= 0; k--) {
+    const p = parts[k], t = (now - p.t0) / p.life;
+    if (t >= 1) { parts.splice(k, 1); continue; }
+    const x = cam.x + p.x * s + p.vx * t * 60, y = cam.y + p.y * s + p.vy * t * 60 + 40 * t * t;
+    g.globalAlpha = 1 - t; g.fillStyle = p.c; const z = Math.max(2, s * .3) * (1 - t * .5); g.fillRect(x - z / 2, y - z / 2, z, z);
+  }
+  g.globalAlpha = 1;
+  // рамка выбранной клетки и примерка цвета
+  if (selected >= 0) {
+    const x = cam.x + (selected % W) * s, y = cam.y + Math.floor(selected / W) * s, pulse = .5 + .5 * Math.sin(now / 160);
+    g.globalAlpha = .45 + .35 * pulse; g.fillStyle = PALETTE[color]; g.fillRect(x, y, s, s); g.globalAlpha = 1;
+    const m = Math.max(2, s * .12);
+    g.lineWidth = Math.max(2, s * .1);
+    g.strokeStyle = '#000'; g.strokeRect(x - m, y - m, s + 2 * m, s + 2 * m);
+    g.strokeStyle = '#fff'; g.setLineDash([Math.max(3, s * .3), Math.max(3, s * .3)]); g.lineDashOffset = -now / 40;
+    g.strokeRect(x - m, y - m, s + 2 * m, s + 2 * m); g.setLineDash([]);
+  }
+  const mr = miniRect();
+  if (mr) {
+    if (miniDirty) { mg.imageSmoothingEnabled = true; mg.drawImage(off, 0, 0, MINI * 2, MINI * 2); miniDirty = false; }
+    g.fillStyle = 'rgba(18,15,26,.85)'; g.fillRect(mr.x - 3, mr.y - 3, mr.w + 6, mr.h + 6);
+    g.imageSmoothingEnabled = true; g.drawImage(miniCv, mr.x, mr.y, mr.w, mr.h); g.imageSmoothingEnabled = false;
+    const k = mr.w / W, rx = mr.x + (-cam.x / s) * k, ry = mr.y + (-cam.y / s) * k;
+    g.save(); g.beginPath(); g.rect(mr.x, mr.y, mr.w, mr.h); g.clip();
+    g.strokeStyle = '#ffcf33'; g.lineWidth = 2; g.strokeRect(rx, ry, Math.max(3, vw / s * k), Math.max(3, vh / s * k));
+    g.restore();
+    g.strokeStyle = 'rgba(255,255,255,.25)'; g.lineWidth = 1; g.strokeRect(mr.x - .5, mr.y - .5, mr.w + 1, mr.h + 1);
+  }
+}
+
+/* ---------- Жесты: сдвиг, щипок, касание ---------- */
+const ptrs = new Map();
+let gest = null, lastTap = { t: 0, x: 0, y: 0 };
+cv.addEventListener('pointerdown', e => {
+  cv.setPointerCapture(e.pointerId); flight = null;
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (ptrs.size === 1) gest = { type: 'pan', sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y, moved: false };
+  else if (ptrs.size === 2) {
+    const [a, b] = [...ptrs.values()];
+    gest = { type: 'pinch', d0: Math.hypot(a.x - b.x, a.y - b.y), s0: cam.s, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, cx: cam.x, cy: cam.y };
+  }
+});
+cv.addEventListener('pointermove', e => {
+  if (!ptrs.has(e.pointerId)) return;
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (gest?.type === 'pan') {
+    const dx = e.clientX - gest.sx, dy = e.clientY - gest.sy;
+    if (!gest.moved && Math.hypot(dx, dy) > 7) gest.moved = true;
+    if (gest.moved) { cam.x = gest.cx + dx; cam.y = gest.cy + dy; clampCam(); dirty = true; }
+  } else if (gest?.type === 'pinch' && ptrs.size >= 2) {
+    const [a, b] = [...ptrs.values()];
+    const s = Math.min(MAX_S, Math.max(minS, gest.s0 * Math.hypot(a.x - b.x, a.y - b.y) / gest.d0));
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const wx = (gest.mx - gest.cx) / gest.s0, wy = (gest.my - gest.cy) / gest.s0;
+    cam.s = s; cam.x = mx - wx * s; cam.y = my - wy * s; clampCam(); dirty = true;
+  }
+});
+function endPtr(e) {
+  if (!ptrs.has(e.pointerId)) return;
+  ptrs.delete(e.pointerId);
+  if (gest?.type === 'pan' && !gest.moved && e.type === 'pointerup') tap(e.clientX, e.clientY);
+  if (ptrs.size === 1) { const [p] = ptrs.values(); gest = { type: 'pan', sx: p.x, sy: p.y, cx: cam.x, cy: cam.y, moved: true }; }
+  else if (!ptrs.size) gest = null;
+}
+cv.addEventListener('pointerup', endPtr);
+cv.addEventListener('pointercancel', endPtr);
+cv.addEventListener('wheel', e => { e.preventDefault(); flight = null; zoomAt(e.clientX, e.clientY, cam.s * (e.deltaY < 0 ? 1.18 : 1 / 1.18)); }, { passive: false });
+
+function tap(sx, sy) {
+  const mr = miniRect();
+  if (mr && sx >= mr.x && sx <= mr.x + mr.w && sy >= mr.y && sy <= mr.y + mr.h) {
+    haptic('sel'); flyTo(Math.floor((sx - mr.x) / mr.w * W), Math.floor((sy - mr.y) / mr.h * H), cam.s); return;
+  }
+  const x = Math.floor((sx - cam.x) / cam.s), y = Math.floor((sy - cam.y) / cam.s);
+  if (x < 0 || y < 0 || x >= W || y >= H) { select(-1); return; }
+  const now = performance.now(), dbl = now - lastTap.t < 320 && Math.hypot(sx - lastTap.x, sy - lastTap.y) < 30;
+  lastTap = { t: dbl ? 0 : now, x: sx, y: sy };
+  select(y * W + x);
+  if (dbl) zoomAt(sx, sy, Math.max(cam.s * 2.2, 14));
+  else if (cam.s < 6) flyTo(x, y, 16);   // с далёкого вида сразу подлетаем к клетке
+}
+
+/* ---------- Выбор клетки и подпись автора ---------- */
+let whoTimer, whoReq = 0;
+const authors = new Map();   // в демо: кто поставил
+function ago(ts) {
+  const m = Math.floor((Date.now() - ts) / 60000);
+  return m < 1 ? 'только что' : m < 60 ? `${m} мин назад` : m < 1440 ? `${Math.floor(m / 60)} ч назад` : `${Math.floor(m / 1440)} д назад`;
+}
+const esc = t => String(t).replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`);
+function select(i, quiet) {
+  selected = i; dirty = true;
+  $('cellInfo').hidden = i < 0;
+  if (i < 0) return;
+  if (!quiet) { haptic('sel'); beep(1200, .03, .025); }
+  $('cellXY').textContent = `${i % W}, ${Math.floor(i / W)}`;
+  $('cellWho').textContent = '';
+  clearTimeout(whoTimer);
+  const req = ++whoReq;
+  whoTimer = setTimeout(async () => {
+    let r;
+    if (DEMO) r = authors.get(i) || { name: null };
+    else r = await api(`/api/who?x=${i % W}&y=${Math.floor(i / W)}`);
+    if (req !== whoReq || selected !== i) return;
+    $('cellWho').innerHTML = r?.name ? `· <b>${esc(r.name)}</b>, ${ago(r.ts)}` : '· пусто';
+  }, 220);
+}
+
+/* ---------- Палитра ---------- */
+function renderPalette() {
+  $('palette').innerHTML = PALETTE.slice(0, FREE_COLORS).map((c, k) => `<button class="sw${k === color ? ' on' : ''}" data-c="${k}" style="background:${c}" aria-label="Цвет ${k + 1}"></button>`).join('');
+  $('goldRow').innerHTML = PALETTE.slice(FREE_COLORS).map((c, k) => `<button class="sw gold${me.premium ? '' : ' locked'}${k + FREE_COLORS === color ? ' on' : ''}" data-c="${k + FREE_COLORS}" style="background:${c}" aria-label="Золотой цвет ${k + 1}"></button>`).join('');
+  $('chosen').style.background = PALETTE[color];
+}
+document.querySelector('.dock-in').addEventListener('click', e => {
+  const b = e.target.closest('[data-c]'); if (!b) return;
+  const c = +b.dataset.c;
+  if (c >= FREE_COLORS && !me.premium) { shopModal(true); return; }
+  color = c; prefs.color = c < FREE_COLORS ? c : prefs.color; savePrefs();
+  haptic('sel'); beep(700 + c * 30, .04, .03, 'triangle'); renderPalette(); dirty = true;
+});
+
+/* ---------- Заряды ---------- */
+let me = { charges: MAX_CHARGES, max: MAX_CHARGES, bonus: 0, premium: false, placed: 0, invites: 0 }, nextAt = 0;
+function applyMe(r) {
+  if (!r || r.charges === undefined) return;
+  const prem = me.premium;
+  me = { ...me, charges: r.charges, max: r.max ?? MAX_CHARGES, bonus: r.bonus, premium: r.premium, placed: r.placed, invites: r.invites ?? me.invites };
+  nextAt = r.next ? Date.now() + r.next : 0;
+  if (prem !== me.premium) renderPalette();
+  renderCharges();
+}
+function regen() {
+  while (nextAt && Date.now() >= nextAt && me.charges < me.max) {
+    me.charges++; nextAt = me.charges < me.max ? nextAt + REGEN_MS : 0;
+    if (me.charges === 1) beep(880, .06, .03, 'triangle');
+  }
+}
+const mmss = ms => { const s = Math.ceil(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+function renderCharges() {
+  regen();
+  const can = me.charges > 0 || me.bonus > 0;
+  $('placeBtn').classList.toggle('empty', !can);
+  $('chVal').textContent = `${me.charges}/${me.max}`;
+  $('bonusVal').hidden = me.bonus <= 0; $('bonusVal').textContent = `+${me.bonus}`;
+  $('placeLbl').textContent = can ? 'Поставить' : 'Ждём заряд';
+  $('placeSub').textContent = nextAt ? `+1 пиксель через ${mmss(nextAt - Date.now())}` : 'запас полный';
+}
+setInterval(renderCharges, 250);
+
+/* ---------- Поставить пиксель ---------- */
+const ownRecent = new Map();   // свои свежие пиксели, чтобы не мигали второй раз при обновлении
+function burstAt(i, c) {
+  const x = i % W + .5, y = Math.floor(i / W) + .5, t0 = performance.now();
+  for (let k = 0; k < 14; k++) { const a = Math.random() * 6.28, v = 1 + Math.random() * 2.5; parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 1, c: Math.random() < .5 ? PALETTE[c] : '#fff', t0, life: 450 + Math.random() * 300 }); }
+}
+$('placeBtn').onclick = async () => {
+  regen();
+  if (selected < 0) { toast('Нажмите на клетку холста, куда поставить пиксель'); haptic('note', 'warning'); return; }
+  if (color >= FREE_COLORS && !me.premium) { shopModal(true); return; }
+  if (me.charges < 1 && me.bonus < 1) {
+    const b = $('placeBtn'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake');
+    haptic('note', 'error'); beep(160, .15, .05, 'sawtooth');
+    toast(`Следующий пиксель через ${mmss(nextAt - Date.now())}. Пиксели без ожидания — в 🛒`);
+    return;
+  }
+  const i = selected, prev = px[i], c = color;
+  if (prev === c) { toast('Здесь уже этот цвет'); return; }
+  const snap = { ...me }, snapNext = nextAt;
+  if (me.charges >= 1) { if (me.charges === me.max) nextAt = Date.now() + REGEN_MS; me.charges--; } else me.bonus--;
+  me.placed++;
+  setPixel(i, c); flashes.push({ x: i % W, y: Math.floor(i / W), c, own: true, t0: performance.now() }); burstAt(i, c);
+  ownRecent.set(i, Date.now()); recordActivity();
+  haptic('imp', 'medium'); beep(520 + c * 25, .07, .05); beep(1040 + c * 25, .09, .03, 'triangle', .05);
+  renderCharges(); dirty = true;
+  if (DEMO) { authors.set(i, { name: 'Вы', ts: Date.now() }); select(i, true); return; }
+  const r = await api('/api/place', { x: i % W, y: Math.floor(i / W), color: c });
+  if (r?.ok) { applyMe(r); return; }
+  // сервер не принял — откатываем
+  if (px[i] === c) setPixel(i, prev);
+  me = snap; nextAt = snapNext;
+  if (r?.status === 429) { applyMe(r); toast('Заряды закончились — подождите немного'); }
+  else if (r?.status === 409) toast('Слишком быстро, нажмите ещё раз');
+  else if (r?.status === 403) toast('Этот цвет из золотой палитры');
+  else toast('Нет связи со стеной, попробуйте ещё раз');
+  haptic('note', 'error'); renderCharges(); dirty = true;
+};
+
+/* ---------- Живые обновления ---------- */
+const activity = [];
+function recordActivity() { activity.push(Date.now()); }
+setInterval(() => {
+  const cut = Date.now() - 60000;
+  while (activity.length && activity[0] < cut) activity.shift();
+  $('liveVal').textContent = activity.length;
+}, 1000);
+function applyChange(i, c, author) {
+  if (px[i] === c) return;
+  setPixel(i, c);
+  const own = ownRecent.get(i);
+  if (!own || Date.now() - own > 15000) flashes.push({ x: i % W, y: Math.floor(i / W), c, t0: performance.now() });
+  if (author) authors.set(i, { name: author, ts: Date.now() });
+  recordActivity(); dirty = true;
+  if (i === selected) select(i, true);
+}
+async function loadCanvas() {
+  const r = await api('/api/canvas');
+  if (!r?.data) return false;
+  loadBytes(Uint8Array.from(atob(r.data), ch => ch.charCodeAt(0)));
+  seq = r.seq;
+  for (const [s, x, y, c] of r.changes) { setPixel(y * W + x, c); seq = s; }
+  dirty = true; return true;
+}
+async function poll() {
+  if (!document.hidden) {
+    const r = await api(`/api/changes?since=${seq}`);
+    if (r?.reset) await loadCanvas();
+    else if (r?.changes) for (const [s, x, y, c] of r.changes) { applyChange(y * W + x, c); seq = s; }
+  }
+  setTimeout(poll, 2000);
+}
+
+/* ---------- Демо: холст с рисунками и имитация других игроков ---------- */
+// буквы — номера цветов палитры, точка — пропуск
+const ART_KEYS = { W: 0, L: 1, G: 2, K: 3, P: 4, R: 5, O: 6, B: 7, Y: 8, l: 9, g: 10, c: 11, b: 12, n: 13, v: 14, m: 15, z: 16, p: 18, e: 19, i: 20 };
+const ART = [
+  { x: 14, y: 16, rows: ['.RR...RR.', 'RRRR.RRRR', 'RRRRRRRRR', 'RRRRRRRRR', '.RRRRRRR.', '..RRRRR..', '...RRR...', '....R....'] },
+  { x: 92, y: 14, rows: ['..........cc', '.......ccccc', '....cccccccb', '.cccccccccbb', '...cccccbbb.', '.....ccbbb..', '.....cbbb...', '.....cb.....'] },
+  { x: 30, y: 78, rows: ['..YYYYY..', '.YYYYYYY.', 'YYKYYYKYY', 'YYKYYYKYY', 'YYYYYYYYY', 'YKYYYYYKY', 'YYKKKKKYY', '.YYYYYYY.', '..YYYYY..'] },
+  { x: 58, y: 40, rows: ['.....R.....', '....RRR....', '...RRRRR...', '..RRRRRRR..', '.RRRRRRRRR.', '..BBBBBBB..', '..BcBBBcB..', '..BBBBBBB..', '..BBBKBBB..', '..BBBKBBB..'] },
+  { x: 74, y: 44, rows: ['...g...', '..ggg..', '.ggggg.', 'ggggggg', '.ggggg.', 'ggggggg', '...B...', '...B...'] },
+  { x: 46, y: 50, rows: ['...g...', '..ggg..', '.ggggg.', 'ggggggg', '...B...', '...B...'] },
+  { x: 98, y: 80, rows: ['G.........G', 'GG.......GG', 'GGGGGGGGGGG', 'GGKGGGGGKGG', 'GGGGGPGGGGG', 'GGGGKKKGGGG', '.GGGGGGGGG.', '..GGGGGGG..'] },
+  { x: 40, y: 110, rows: ['R'.repeat(48), 'O'.repeat(48), 'Y'.repeat(48), 'l'.repeat(48), 'b'.repeat(48), 'v'.repeat(48)] },
+  { x: 8, y: 52, rows: ['zz.zz.zz', 'zzzzzzzz', 'zpzzzzpz', 'zzzzzzzz', '.zzzzzz.'] },
+  { x: 40, y: 60, rows: ['l'.repeat(48), 'g'.repeat(48)] },
+];
+const DEMO_NAMES = ['Мирра', 'Алекс К.', 'Ника', 'Тимур', 'Соня В.', 'Ян', 'Лиза', 'Артём Р.', 'Даша', 'Макс', 'Кира', 'Илья П.'];
+function demoInit() {
+  const todo = [];
+  // рисунки рассчитаны на квадрат 128×128 — повторяем их по всей стене со сдвигами
+  for (let ty = 0; ty < H / 128; ty++) for (let tx = 0; tx < W / 128; tx++) {
+    if ((tx * 7 + ty * 3) % 5 === 4) continue;   // пара пустых участков — места для новых рисунков
+    for (const a of ART) {
+      if (Math.random() < .35) continue;
+      const ox = tx * 128 + (a.x + 64 * ((tx + ty) % 2)) % 80, oy = ty * 128 + a.y;
+      a.rows.forEach((row, dy) => [...row].forEach((ch, dx) => { const x = ox + dx, y = oy + dy; if (ch !== '.' && x < W && y < H) todo.push([y * W + x, ART_KEYS[ch]]); }));
+    }
+  }
+  todo.sort(() => Math.random() - .5);
+  const now = Date.now();
+  const done = Math.floor(todo.length * .72);
+  for (let k = 0; k < done; k++) { const [i, c] = todo[k]; setPixel(i, c); authors.set(i, { name: DEMO_NAMES[k % DEMO_NAMES.length], ts: now - Math.random() * 864e5 }); }
+  for (let k = 0; k < 3000; k++) { const i = Math.floor(Math.random() * W * H); if (!px[i]) { setPixel(i, Math.floor(Math.random() * FREE_COLORS)); authors.set(i, { name: DEMO_NAMES[k % DEMO_NAMES.length], ts: now - Math.random() * 864e5 }); } }
+  const rest = todo.slice(done);
+  // ближайшие к экрану рисунки дорисовываются первыми, чтобы жизнь было видно
+  const nearView = () => {
+    const cx = (vw / 2 - cam.x) / cam.s, cy = ((vh - dockH()) / 2 - cam.y) / cam.s, r = Math.max(12, vw / cam.s / 2);
+    for (let k = 0; k < 40 && rest.length; k++) {
+      const j = Math.floor(Math.random() * rest.length), i = rest[j][0];
+      if (Math.abs(i % W - cx) < r && Math.abs(i / W - cy) < r) return rest.splice(j, 1)[0];
+    }
+    return [Math.floor(cy + (Math.random() - .5) * r) * W + Math.floor(cx + (Math.random() - .5) * r), Math.floor(Math.random() * FREE_COLORS)];
+  };
+  (function bot() {
+    const roll = Math.random();
+    const pick = roll < .55 ? nearView() : rest.length && roll < .85 ? rest.shift() : [Math.floor(Math.random() * W * H), Math.floor(Math.random() * FREE_COLORS)];
+    if (!document.hidden && pick[0] >= 0 && pick[0] < W * H) applyChange(pick[0], pick[1], DEMO_NAMES[Math.floor(Math.random() * DEMO_NAMES.length)]);
+    setTimeout(bot, 200 + Math.random() * 600);
+  })();
+}
+
+/* ---------- Окна ---------- */
+function openModal(html) {
+  $('modal').innerHTML = html; $('modalBack').hidden = false;
+  try { TG?.BackButton?.show(); } catch (e) {}
+}
+function closeModal() { $('modalBack').hidden = true; try { TG?.BackButton?.hide(); } catch (e) {} }
+$('modalBack').addEventListener('click', e => { if (e.target === $('modalBack') || e.target.closest('[data-close]')) closeModal(); });
+let toastT;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 2600); }
+
+function helpModal() {
+  openModal(`<div class="big">🎨</div><h2>Пиксельная стена</h2>
+    <p>Один холст на всех игроков Telegram. Рисуйте вместе с друзьями — или закрашивайте чужое.</p>
+    <div class="rules">
+      <div><span>👆</span>Двигайте холст пальцем, приближайте двумя пальцами или двойным касанием.</div>
+      <div><span>🎯</span>Нажмите на клетку, выберите цвет внизу и нажмите «Поставить».</div>
+      <div><span>⚡</span>В запасе до ${MAX_CHARGES} пикселей, новый — каждые ${REGEN_MS / 1000} секунд.</div>
+      <div><span>🔍</span>Нажмите на любой пиксель, чтобы узнать, кто его поставил.</div>
+      <div><span>📤</span>Делитесь местом на холсте — друг откроет стену прямо там.</div>
+    </div>
+    <button class="toggle" id="soundTgl" aria-pressed="${prefs.sound}">🔊 Звуки<i></i></button>
+    ${DEMO ? '<p class="fine">Сейчас демо-режим: другие игроки имитируются, покупки бесплатные.</p>' : ''}
+    <button class="btn primary" data-close>Рисовать</button>`);
+  $('soundTgl').onclick = () => { prefs.sound = !prefs.sound; savePrefs(); $('soundTgl').setAttribute('aria-pressed', prefs.sound); };
+}
+$('helpBtn').onclick = helpModal;
+
+const packIcon = cols => `<span class="pi">${cols.map(c => `<i style="background:${PALETTE[c]}"></i>`).join('')}</span>`;
+function shopModal(goldFirst) {
+  const goldRow = `<div class="pack goldp">${packIcon([16, 17, 18, 19, 20, 21, 22, 23, 16, 18, 20, 22, 17, 19, 21, 23])}
+    <div class="pt"><b>${GOLD.title}</b><small>${GOLD.desc}</small></div>
+    <button class="buy" data-pack="gold" ${me.premium ? 'disabled' : ''}>${me.premium ? 'Открыта' : `⭐ ${GOLD.stars}`}</button></div>`;
+  const packs = PACKS.map((p, k) => `<div class="pack">${p.tag ? `<span class="tag">${p.tag}</span>` : ''}${packIcon([[5, 6, 8, 9], [11, 12, 14, 4], [16, 18, 19, 20]][k].flatMap(c => [c, c, c, c]).slice(0, 16).sort(() => .5 - Math.random()))}
+    <div class="pt"><b>${p.title}</b><small>${p.desc}</small></div><button class="buy" data-pack="${p.id}">⭐ ${p.stars}</button></div>`).join('');
+  openModal(`<div class="big">🛒</div><h2>Магазин</h2>
+    <p>Купленные пиксели не сгорают и тратятся, когда бесплатный запас закончился.</p>
+    ${goldFirst ? goldRow + packs : packs + goldRow}
+    <p class="fine">Оплата — Telegram Stars. Пиксели нельзя вывести или обменять обратно. Вопросы по покупкам — /paysupport в боте.</p>
+    <button class="btn" data-close>Закрыть</button>`);
+  $('modal').querySelectorAll('[data-pack]').forEach(b => b.onclick = () => buyPack(b.dataset.pack));
+}
+$('shopBtn').onclick = () => shopModal();
+async function buyPack(id) {
+  const pack = id === 'gold' ? GOLD : PACKS.find(p => p.id === id);
+  if (DEMO) {
+    me.bonus += pack.pixels; if (id === 'gold') me.premium = true;
+    celebrate(`Демо: +${pack.pixels} пикселей${id === 'gold' ? ' и золотая палитра' : ''} (без оплаты)`);
+    renderPalette(); renderCharges(); shopModal(); return;
+  }
+  if (!TG) { toast('Покупки работают внутри Telegram'); return; }
+  const r = await api('/api/invoice', { pack: id });
+  if (!r?.link) { toast(r?.error === 'owned' ? 'Золотая палитра уже открыта' : 'Магазин сейчас недоступен'); return; }
+  TG.openInvoice(r.link, async st => {
+    if (st !== 'paid') { if (st === 'failed') toast('Оплата не прошла'); return; }
+    const before = me.bonus;
+    for (let k = 0; k < 6; k++) {   // начисление приходит через бота, ждём его
+      applyMe(await api('/api/me', {}));
+      if (me.bonus > before) break;
+      await new Promise(res => setTimeout(res, 1500));
+    }
+    celebrate(`+${pack.pixels} пикселей${id === 'gold' ? ' и золотая палитра' : ''}!`);
+    renderPalette(); closeModal();
+  });
+}
+function celebrate(msg) {
+  toast(msg); haptic('note', 'success');
+  [660, 880, 1320].forEach((f, k) => beep(f, .12, .04, 'triangle', k * .08));
+  const t0 = performance.now();
+  for (let k = 0; k < 40; k++) parts.push({ x: (vw / 2 - cam.x) / cam.s, y: (vh / 3 - cam.y) / cam.s, vx: (Math.random() - .5) * 8, vy: -Math.random() * 6, c: PALETTE[16 + k % 8], t0, life: 800 + Math.random() * 500 });
+}
+
+function topModal() {
+  openModal(`<div class="big">🏆</div><h2>Художники недели</h2><p>Кто поставил больше всех пикселей с понедельника.</p>
+    <div id="lbList" style="display:flex;flex-direction:column;gap:6px"><p>Загрузка…</p></div><button class="btn" data-close>Закрыть</button>`);
+  const show = (r, demo) => {
+    const list = $('lbList'); if (!list) return;
+    if (!r?.top) { list.innerHTML = '<p>Рейтинг появится, когда стена заработает в Telegram.</p>'; return; }
+    const row = (x, k) => `<div class="lb${x.me ? ' me' : ''}"><b>${['🥇', '🥈', '🥉'][k] || k + 1}</b><span>${esc(x.name)}${x.me && x.name !== 'Вы' ? ' (вы)' : ''}</span><i>${x.stars}</i></div>`;
+    list.innerHTML = (demo ? '<p class="fine">Пример: настоящие художники появятся после запуска</p>' : '') + r.top.map(row).join('')
+      + (r.me && !r.top.some(x => x.me) ? `<p class="fine">…</p>${row({ name: 'Вы', stars: r.me.stars, me: true }, r.me.rank - 1)}` : '')
+      + (!r.top.length ? '<p>Пока никого — станьте первым!</p>' : '');
+  };
+  if (DEMO) {
+    const top = [['Мирра', 412], ['Алекс К.', 287], ['Ника', 190], ['Тимур', 96], ['Соня В.', 41], ['Ян', 12]].map(([name, stars]) => ({ name, stars }));
+    top.push({ name: 'Вы', stars: me.placed, me: true }); top.sort((a, b) => b.stars - a.stars);
+    show({ top }, true);
+  } else api('/api/top', {}).then(r => show(r));
+}
+$('topBtn').onclick = topModal;
+
+function friendsModal() {
+  openModal(`<div class="big">👥</div><h2>Друзья</h2>
+    <div class="stat"><div><b>${me.invites || 0}</b><small>друзей пришло по вашей ссылке</small></div><div><b>${me.placed}</b><small>пикселей вы поставили</small></div></div>
+    <p>Друг получает <b style="color:var(--text)">+50 пикселей</b> на старте, вы — <b style="color:var(--text)">+50</b> за каждого нового игрока. Вместе рисовать быстрее!</p>
+    <button class="btn primary" id="inviteBtn">Пригласить друга</button><button class="btn" data-close>Закрыть</button>`);
+  $('inviteBtn').onclick = () => share(`https://t.me/${BOT}?start=ref_${TG?.initDataUnsafe?.user?.id}`, 'Рисуем вместе на общей Пиксельной стене! По ссылке +50 пикселей на старте 🎨');
+}
+$('friendsBtn').onclick = friendsModal;
+
+function share(link, text) {
+  if (!TG || !BOT) { toast(DEMO ? 'В Telegram здесь откроется выбор чата' : 'Ссылки заработают после запуска в Telegram'); return; }
+  TG.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
+}
+$('shareBtn').onclick = () => {
+  if (selected < 0) return;
+  const x = selected % W, y = Math.floor(selected / W);
+  share(`https://t.me/${BOT}?startapp=p_${x}_${y}`, `Смотри, что на Пиксельной стене — клетка ${x}, ${y} 👀`);
+};
+
+/* ---------- Запуск ---------- */
+addEventListener('resize', resize);
+new ResizeObserver(() => resize()).observe($('dock'));   // высота панели меняется, когда грузятся шрифты
+document.addEventListener('visibilitychange', async () => { if (!document.hidden && !DEMO) applyMe(await api('/api/me', {})); });
+(async function start() {
+  loadBytes(new Uint8Array(W * H));   // пустой холст — белый
+  renderPalette(); renderCharges(); resize(); fit();
+  requestAnimationFrame(draw);
+  if (DEMO) demoInit();
+  else {
+    if (!await loadCanvas()) { $('loading').textContent = 'Стена недоступна, пробуем снова…'; setTimeout(start, 3000); return; }
+    poll();
+    if (TG) applyMe(await api('/api/me', {}));
+    setInterval(async () => { if (!document.hidden) applyMe(await api('/api/me', {})); }, 60000);
+  }
+  $('loading').hidden = true; dirty = true;
+  // ссылка на место холста: startapp=p_X_Y (или ?p=X_Y в браузере)
+  const sp = TG?.initDataUnsafe?.start_param || new URLSearchParams(location.search).get('p') || '';
+  const m = sp.match(/(\d+)_(\d+)$/);
+  if (m && +m[1] < W && +m[2] < H) setTimeout(() => { select(+m[2] * W + +m[1]); flyTo(+m[1], +m[2], 18); }, 300);
+  else if (!prefs.seen) { prefs.seen = true; savePrefs(); setTimeout(helpModal, 500); }
+})();
+</script>
+</body>
+</html>
