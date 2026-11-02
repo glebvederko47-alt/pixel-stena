@@ -160,8 +160,8 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 <script>
 'use strict';
 /* ---------- Настройки ---------- */
-const API = '';   // адрес сервера на Cloudflare Workers; пусто — демо-режим с имитацией игроков
-const BOT = '';   // имя бота без @ — для приглашений и ссылок на место холста
+const API = 'https://pixel-stena.glebvederko47.workers.dev';   // адрес сервера на Cloudflare Workers; пусто — демо-режим с имитацией игроков
+const BOT = 'Pixelwall_app';   // имя бота без @ — для приглашений и ссылок на место холста
 const TG = window.Telegram?.WebApp?.initData ? window.Telegram.WebApp : null;
 const DEMO = !API;
 const W = 512, H = 512, MAX_CHARGES = 10, REGEN_MS = 20000, FREE_COLORS = 16;
